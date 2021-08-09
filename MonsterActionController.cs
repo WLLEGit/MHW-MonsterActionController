@@ -13,6 +13,7 @@ namespace HunterPie.Plugins.Example
 {
     public class MonsterActionController : IPlugin
     {
+        #region necessary api definition
         // This is your plugin name
         public string Name { get; set; } = "Monster Action Controller";
 
@@ -21,13 +22,18 @@ namespace HunterPie.Plugins.Example
 
         // This is our game context, you'll use it to track in-game information and hook events
         public Game Context { get; set; }
+        #endregion
 
+        #region other definitions
         private long MonsterAddress { get; set; }
         private Thread thread;
-        private Timer timer;
 
         private int selectedID = 0;
         private int maxID;
+
+        bool is_debugging = false;
+        #endregion
+
         readonly List<string> actionDictID_en = new List<string>() {"Fatalis" };
         readonly List<string> actionDictID_ch = new List<string>() {"黑龙" };
         readonly Dictionary<char, List<int>> cmdValues = new Dictionary<char, List<int>>() {
@@ -44,8 +50,7 @@ namespace HunterPie.Plugins.Example
               { 'V', new List<int>() {81} },
               { 'P', new List<int>() {73} } };
 
-        bool is_debugging = false;
-
+        #region funtions
         public void Initialize(Game context)
         {
             Context = context;
@@ -156,6 +161,6 @@ namespace HunterPie.Plugins.Example
                 sw.WriteLine($"{tar.Name},{tar.ActionId},{tar.ActionReferenceName},{tar.ActionName}");
             }
         }
-
+        #endregion
     }
 }
