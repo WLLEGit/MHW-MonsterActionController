@@ -1,4 +1,4 @@
-# MonsterActionController
+# MonsterActionController（更新到2.0）
 
 怪物猎人世界（冰原）怪物动作控制插件（基于HunterPie）
 
@@ -25,6 +25,7 @@ HunterPie作为一款操作简便的显血软件被猎人们广泛使用，不�
 | Alt+D  | 启用Debug      | 开启数据保存，怪物的出招和对应的数字代号将保存到HunterPie同级的Actionlog.csv中 |
 | Alt+T  | 切换怪物       | 在所有适配的怪物之间切换，控制台会显示当前怪物。             |
 | Alt+S  | 停止锁招       | 按下后停止控制怪物出招                                       |
+| Alt+E  | 骑乘           | 需要先积累至少1点骑乘值，如虫棍空中攻击                      |
 | Alt+J  | 单次火球       | 88 / L2 Breath Single                                        |
 | Alt+K  | 胸前直线火     | 135 / L2 Line Fire Shoot                                     |
 | Alt+L  | 扇形火         | 154 / L2 Special Wide Range Fire Shoot                       |
@@ -37,7 +38,7 @@ HunterPie作为一款操作简便的显血软件被猎人们广泛使用，不�
 | Alt+V  | 吐延时爆弹     | 81 / L2 Quick Breath                                         |
 | Alt+P  | 下压           | 73 / L2 Switch L4 Body Press                                 |
 
-### 2）拓展
+### 2）拓展（看下面2.0版本）
 
 如果你想要控制其他怪物，需要**自行找到该怪物技能对应的ActionID**，此节简单讲解插件原理，并讲述拓展适配的方法。
 
@@ -73,3 +74,21 @@ MHW怪物出招由一个int型的**ActionID**控制，当怪物一个技能放�
 2. 查看Actionlog.csv，挑选需要的ActionID
 3. 将ActionID填入MonsterActionController.cs的对应位置
 4. 重启HunterPie即可
+
+## 二、2.0版本
+
+**新特性：**
+
+1. **第一龙称狩猎：骑龙控招，沉浸感MAX**
+2. **大幅简化拓展流程，轻松添加其他怪物**
+3. **增加按键提示音**
+4. **增加反插件刷片机制，维护游戏环境**
+
+### 拓展部分
+
+现在拓展只需要打开`HunterPie\Modules\MonsterActionController\actions.csv`表格，**在里面添加即可，不需要修改源代码。**
+
+![image-20210811145306028](readme/image-20210811145306028.png)
+
+每一个龙**占两列**，技能注释那列**每个单元至少有一个字符，不要包含英文逗号**
+
