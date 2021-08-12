@@ -1,4 +1,4 @@
-# MonsterActionController（更新到2.0）
+# MonsterActionController（更新到2.1）
 
 怪物猎人世界（冰原）怪物动作控制插件（基于HunterPie）
 
