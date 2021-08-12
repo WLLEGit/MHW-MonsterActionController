@@ -1,23 +1,19 @@
 ﻿using System;
 using HunterPie.Core;
 using HunterPie.Core.Input;
-using HunterPie.Logger;
 using HunterPie.Core.Events;
 using System.IO;
 using System.Reflection;
 using HunterPie.Memory;
 using System.Threading;
 using System.Collections.Generic;
-using HunterPie.Core.Definitions;
-using HunterPie.Core.Enums;
-using HunterPie.Core.Monsters;
 using System.Text;
+using HunterPie.Core.Definitions;
 
 namespace HunterPie.Plugins.Example
 {
     public class MonsterActionController : IPlugin
     {
-        #region necessary api definition
         // This is your plugin name
         public string Name { get; set; } = "Monster Action Controller";
 
@@ -26,9 +22,7 @@ namespace HunterPie.Plugins.Example
 
         // This is our game context, you'll use it to track in-game information and hook events
         public Game Context { get; set; }
-        #endregion
 
-        #region other definitions
         private long MonsterAddress { get; set; }
         private Thread thread;
         private Thread lockMountThread;
@@ -40,7 +34,6 @@ namespace HunterPie.Plugins.Example
 
         bool is_debugging = false;
         bool is_health_locked = false;
-        #endregion
 
         readonly List<string> actionDictID = new List<string>() { };
         readonly Dictionary<char, List<int>> cmdValues = new Dictionary<char, List<int>>() {
@@ -56,8 +49,7 @@ namespace HunterPie.Plugins.Example
               { 'V', new List<int>() {} },
               { 'P', new List<int>() {} } };
 
-
-        #region funtions
+        #region Load Config: actions.csv
         public static List<String[]> ReadCSV(string filePathName)
         {
             List<String[]> ls = new List<String[]>();
@@ -95,6 +87,9 @@ namespace HunterPie.Plugins.Example
                 }
             }
         }
+        #endregion
+
+        #region HunterPie API methods
         public void Initialize(Game context)
         {
             LoadConfig();
@@ -113,17 +108,7 @@ namespace HunterPie.Plugins.Example
             UnhookEvents();
         }
 
-        private void StopThread(bool stopLock = false)
-        {
-            if (thread == null)
-                return;
-            thread.Abort();
-            if (stopLock)
-            {
-                lockMountThread.Abort();
-            }
-        }
-        readonly int[] hotkeyIds = new int[16];
+        readonly int[] hotkeyIds = new int[17];
         public void CreateHotkeys()
         {
             hotkeyIds[0] = Hotkey.Register("Alt+J", () => { HotkeyCallback('J'); });
@@ -143,22 +128,61 @@ namespace HunterPie.Plugins.Example
             {
                 is_debugging = !is_debugging;
                 this.Log($"is_debugging: {is_debugging}");
-                using (StreamWriter sw = new StreamWriter("Actionlog.csv"))
+                if (!File.Exists("Actionlog.csv"))
                 {
-                    sw.WriteLine("Name,ActionID,ActionReferenceName,ActionName");
+                    using (StreamWriter sw = new StreamWriter(path: "Actionlog.csv", false, Encoding.Default))
+                    {
+                        sw.WriteLine("Name,ActionID,ActionReferenceName,ActionName");
+                    }
                 }
             });
 
             hotkeyIds[7] = Hotkey.Register("Alt+T", () => {
                 selectedID = (selectedID + 1) % maxID;
-                this.Log($"Transferring to: {actionDictID[selectedID]}");
+                this.Log($"切换到: {actionDictID[selectedID]}");
             });
 
-            hotkeyIds[8] = Hotkey.Register("Alt+S", () => { StopThread(true); });
+            hotkeyIds[8] = Hotkey.Register("Alt+S", () => { StopThread(); });
 
             hotkeyIds[15] = Hotkey.Register("Alt+E", () => { LockMount(); });
+
+            hotkeyIds[16] = Hotkey.Register("Alt+1", () => { StopThread(true); });
+        }
+        public void RemoveHotkeys()
+        {
+            foreach (int id in hotkeyIds)
+                Hotkey.Unregister(id);
+        }
+        private void HookEvents()
+        {
+            // We can access the Player, Monsters and World from Context
+            Context.FirstMonster.OnActionChange += OnMonsterActionChangeCallBack;
+            Context.SecondMonster.OnActionChange += OnMonsterActionChangeCallBack;
+            Context.ThirdMonster.OnActionChange += OnMonsterActionChangeCallBack;
         }
 
+        private void UnhookEvents()
+        {
+            // To unhook events, we just do the same thing but with a minus instead of a plus
+            Context.FirstMonster.OnActionChange -= OnMonsterActionChangeCallBack;
+            Context.SecondMonster.OnActionChange -= OnMonsterActionChangeCallBack;
+            Context.ThirdMonster.OnActionChange -= OnMonsterActionChangeCallBack;
+        }
+        #endregion
+
+        private void StopThread(bool stopAll = false)
+        {
+            if (thread != null)
+                thread.Abort();
+            if (stopAll)
+            {
+                if (lockHealthThread != null)
+                    lockHealthThread.Abort();
+                if (lockMountThread != null)
+                    lockMountThread.Abort();
+            }
+
+        }
         public void HotkeyCallback(char cmd)
         {
             System.Media.SystemSounds.Beep.Play();
@@ -183,26 +207,6 @@ namespace HunterPie.Plugins.Example
             thread.Start();
         }
 
-        public void RemoveHotkeys()
-        {
-            foreach (int id in hotkeyIds)
-                Hotkey.Unregister(id);
-        }
-        private void HookEvents()
-        {
-            // We can access the Player, Monsters and World from Context
-            Context.FirstMonster.OnActionChange += OnMonsterActionChangeCallBack;
-            Context.SecondMonster.OnActionChange += OnMonsterActionChangeCallBack;
-            Context.ThirdMonster.OnActionChange += OnMonsterActionChangeCallBack;
-        }
-
-        private void UnhookEvents()
-        {
-            // To unhook events, we just do the same thing but with a minus instead of a plus
-            Context.FirstMonster.OnActionChange -= OnMonsterActionChangeCallBack;
-            Context.SecondMonster.OnActionChange -= OnMonsterActionChangeCallBack;
-            Context.ThirdMonster.OnActionChange -= OnMonsterActionChangeCallBack;
-        }
 
         private Monster GetTargetMonster()
         {
@@ -219,12 +223,10 @@ namespace HunterPie.Plugins.Example
 
             lockHealthThread = new Thread(() =>
             {
-                this.Log("Health Locked");
+                this.Log("Stamina Locked");
                 long address = Kernel.ReadMultilevelPtr(Address.GetAddress("BASE") + Address.GetAddress("EQUIPMENT_OFFSET"), Address.GetOffsets("PlayerBasicInformationOffsets"));
-                float[] health;
+                //float[] health;
 
-                Kernel.Read<float>(address + 0x144);
-                Kernel.Read<float>(address + 0x13C);
 
                 while (true)
                 {
@@ -236,6 +238,7 @@ namespace HunterPie.Plugins.Example
                     //health = Kernel.ReadStructure<float>(address + 0x60, 2);
                     //if(health[0] != health[1])
                     //    Kernel.Write<float>(address + 0x60 + 4, 99);
+                    Thread.Sleep(200);
                 }
 
             });
@@ -253,18 +256,20 @@ namespace HunterPie.Plugins.Example
             {
                 Ailment mountAil;
                 mountAil = GetTargetMonster().Ailments[0];
-                foreach (Ailment ailment in Context.HuntedMonster.Ailments)
-                    if (ailment.Name == "骑乘")
+                foreach (Ailment ailment in GetTargetMonster().Ailments)
+                    if (ailment.Name == "骑乘" || ailment.Name == "Mount")
                         mountAil = ailment;
-                this.Log($"{mountAil.Buildup} / {mountAil.MaxBuildup}");
+
                 long curBuildupAddr = mountAil.Address + sizeof(int) * 7 + sizeof(long) + sizeof(float) * 3;
-                long maxBuildupAddr = mountAil.Address + sizeof(int) * 8 + sizeof(long) + sizeof(float) * 5;
-                while (true)
+                long maxBuildupAddr = mountAil.Address + sizeof(int) * 8 + sizeof(long) + sizeof(float) * 6;
+                for (int _ = 0; _ < 1; ++_)   //once is OK
                 {
                     float maxBuildup = Kernel.Read<float>(maxBuildupAddr);
                     float curBuildup = Kernel.Read<float>(curBuildupAddr);
                     if (curBuildup != maxBuildup)
-                        Kernel.Write<float>(curBuildupAddr, maxBuildup - 1);
+                    {
+                        Kernel.Write<float>(curBuildupAddr, maxBuildup);
+                    }
                 }
             });
             lockMountThread.Start();
@@ -276,11 +281,10 @@ namespace HunterPie.Plugins.Example
 
             if (!is_debugging)
                 return;
-            using (StreamWriter sw = new StreamWriter("Actionlog.csv", true))
+            using (StreamWriter sw = new StreamWriter("Actionlog.csv", append: true, encoding: Encoding.Default))
             {
                 sw.WriteLine($"{tar.Name},{tar.ActionId},{tar.ActionReferenceName},{tar.ActionName}");
             }
         }
-        #endregion
     }
 }
