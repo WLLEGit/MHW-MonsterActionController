@@ -9,6 +9,7 @@ using System.Threading;
 using System.Collections.Generic;
 using System.Text;
 using HunterPie.Core.Definitions;
+using HunterPie.Core.Native;
 
 namespace HunterPie.Plugins.Example
 {
@@ -34,6 +35,7 @@ namespace HunterPie.Plugins.Example
 
         bool is_debugging = false;
         bool is_health_locked = false;
+        bool is_beep = true;
 
         readonly List<string> actionDictID = new List<string>() { };
         readonly Dictionary<char, List<int>> cmdValues = new Dictionary<char, List<int>>() {
@@ -48,6 +50,18 @@ namespace HunterPie.Plugins.Example
               { 'Z', new List<int>() {} },
               { 'V', new List<int>() {} },
               { 'P', new List<int>() {} } };
+        readonly Dictionary<char, List<string>> cmdExplanations = new Dictionary<char, List<string>>() {
+            { 'J', new List< string>(){} },
+            { 'K', new List<string>() {} },
+            { 'L', new List<string>() {} },
+            { 'U', new List<string>() {} },
+            { 'O', new List<string>() {} },
+             { 'B', new List<string>() {} } ,
+              { 'N', new List<string>() {} },
+              { 'M', new List<string>() {} },
+              { 'Z', new List<string>() {} },
+              { 'V', new List<string>() {} },
+              { 'P', new List<string>() {} } };
 
         #region Load Config: actions.csv
         public static List<String[]> ReadCSV(string filePathName)
@@ -84,6 +98,7 @@ namespace HunterPie.Plugins.Example
                 for (int j = 0; j < cnt; ++j)
                 {
                     cmdValues[data[i][0][0]].Add(int.Parse(data[i][2 * j + 1]));
+                    cmdExplanations[data[i][0][0]].Add(data[i][2 * j + 2]);
                 }
             }
         }
@@ -108,7 +123,7 @@ namespace HunterPie.Plugins.Example
             UnhookEvents();
         }
 
-        readonly int[] hotkeyIds = new int[17];
+        readonly int[] hotkeyIds = new int[18];
         public void CreateHotkeys()
         {
             hotkeyIds[0] = Hotkey.Register("Alt+J", () => { HotkeyCallback('J'); });
@@ -128,6 +143,8 @@ namespace HunterPie.Plugins.Example
             {
                 is_debugging = !is_debugging;
                 this.Log($"is_debugging: {is_debugging}");
+                string tmp = is_debugging ? "Activate" : "Deactivate";
+                _ = Chat.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>DEBUG and Save</STYL>\n.{tmp}", 0, 0, 0);
                 if (!File.Exists("Actionlog.csv"))
                 {
                     using (StreamWriter sw = new StreamWriter(path: "Actionlog.csv", false, Encoding.Default))
@@ -140,13 +157,23 @@ namespace HunterPie.Plugins.Example
             hotkeyIds[7] = Hotkey.Register("Alt+T", () => {
                 selectedID = (selectedID + 1) % maxID;
                 this.Log($"切换到: {actionDictID[selectedID]}");
+                _ = Chat.SystemMessage("<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>Swtich Monster</STYL>", 0, 0, 1);
             });
 
-            hotkeyIds[8] = Hotkey.Register("Alt+S", () => { StopThread(); });
+            hotkeyIds[8] = Hotkey.Register("Alt+S", () => { 
+                StopThread();
+                _ = Chat.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>Alt+S</STYL>\n", 0, 0, 1); 
+            });
 
             hotkeyIds[15] = Hotkey.Register("Alt+E", () => { LockMount(); });
 
             hotkeyIds[16] = Hotkey.Register("Alt+1", () => { StopThread(true); });
+
+            hotkeyIds[17] = Hotkey.Register("Alt+R", () => {
+                is_beep = !is_beep;
+                string tmp = is_beep ? "Beep Mode" : "Chat Line Mode";
+                _ = Chat.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>Swtich Alert Mode</STYL>\n{tmp}", 0, 0, 1);
+            });
         }
         public void RemoveHotkeys()
         {
@@ -185,7 +212,11 @@ namespace HunterPie.Plugins.Example
         }
         public void HotkeyCallback(char cmd)
         {
-            System.Media.SystemSounds.Beep.Play();
+            if (is_beep)
+                System.Media.SystemSounds.Beep.Play();
+            else
+                _ = Chat.Say($"Alt+{cmd}: {cmdExplanations[cmd][selectedID]}");
+
             LockStaminaAndHealth();
             StopThread();
             this.Log($"ALT+{cmd}");
