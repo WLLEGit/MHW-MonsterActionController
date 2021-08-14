@@ -10,6 +10,10 @@ using System.Collections.Generic;
 using System.Text;
 using HunterPie.Core.Definitions;
 using HunterPie.Core.Native;
+using System.Threading.Tasks;
+using System.Runtime.InteropServices;
+using HunterPie.Native.Connection.Packets;
+using HunterPie.Native.Connection;
 
 namespace HunterPie.Plugins.Example
 {
@@ -35,9 +39,12 @@ namespace HunterPie.Plugins.Example
 
         bool is_debugging = false;
         bool is_health_locked = false;
-        bool is_beep = true;
+        bool is_beep = false;
+        bool is_monster_selected = false;
 
-        readonly List<string> actionDictID = new List<string>() { };
+        public ChatInChinese chatInChinese = new ChatInChinese();
+
+        readonly List<string> monsterNameList = new List<string>() { };
         readonly Dictionary<char, List<int>> cmdValues = new Dictionary<char, List<int>>() {
             { 'J', new List< int>(){} },
             { 'K', new List<int>() {} },
@@ -92,7 +99,7 @@ namespace HunterPie.Plugins.Example
             List<string[]> data = ReadCSV("Modules\\MonsterActionController\\actions.csv");
             int cnt = (data[0].Length - 1) / 2;
             for (int i = 0; i < cnt; ++i)
-                actionDictID.Add(data[0][2 * i + 1]);
+                monsterNameList.Add(data[0][2 * i + 1]);
             for (int i = 1; i <= 11; ++i)
             {
                 for (int j = 0; j < cnt; ++j)
@@ -107,13 +114,16 @@ namespace HunterPie.Plugins.Example
         #region HunterPie API methods
         public void Initialize(Game context)
         {
+            chatInChinese.Init();
+
             LoadConfig();
             Context = context;
             MonsterAddress = 0;
-            maxID = actionDictID.Count;
+            maxID = monsterNameList.Count;
 
             CreateHotkeys();
             HookEvents();
+
         }
 
         public void Unload()
@@ -141,10 +151,11 @@ namespace HunterPie.Plugins.Example
 
             hotkeyIds[6] = Hotkey.Register("Alt+D", () =>
             {
+                DebugTest();
                 is_debugging = !is_debugging;
                 this.Log($"is_debugging: {is_debugging}");
-                string tmp = is_debugging ? "Activate" : "Deactivate";
-                _ = Chat.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>DEBUG and Save</STYL>\n.{tmp}", 0, 0, 0);
+                string tmp = is_debugging ? "开启" : "关闭";
+                _ = chatInChinese.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>DEBUG&SAVE模式</STYL>\n{tmp}", 0, 0, 0);
                 if (!File.Exists("Actionlog.csv"))
                 {
                     using (StreamWriter sw = new StreamWriter(path: "Actionlog.csv", false, Encoding.Default))
@@ -155,24 +166,26 @@ namespace HunterPie.Plugins.Example
             });
 
             hotkeyIds[7] = Hotkey.Register("Alt+T", () => {
+                is_monster_selected = true;
                 selectedID = (selectedID + 1) % maxID;
-                this.Log($"切换到: {actionDictID[selectedID]}");
-                _ = Chat.SystemMessage("<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>Swtich Monster</STYL>", 0, 0, 1);
+                this.Log($"切换到: {monsterNameList[selectedID]}");
+                _ = chatInChinese.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>切换到怪物</STYL>\n{monsterNameList[selectedID]}", 0, 0, 1);
             });
 
-            hotkeyIds[8] = Hotkey.Register("Alt+S", () => { 
+            hotkeyIds[8] = Hotkey.Register("Alt+S", () => {
                 StopThread();
-                _ = Chat.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>Alt+S</STYL>\n", 0, 0, 1); 
+                _ = chatInChinese.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>Alt+S</STYL>\n", 0, 0, 1);
             });
 
             hotkeyIds[15] = Hotkey.Register("Alt+E", () => { LockMount(); });
 
             hotkeyIds[16] = Hotkey.Register("Alt+1", () => { StopThread(true); });
 
-            hotkeyIds[17] = Hotkey.Register("Alt+R", () => {
+            hotkeyIds[17] = Hotkey.Register("Alt+R", () => {/*
                 is_beep = !is_beep;
-                string tmp = is_beep ? "Beep Mode" : "Chat Line Mode";
-                _ = Chat.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>Swtich Alert Mode</STYL>\n{tmp}", 0, 0, 1);
+                string tmp = is_beep ? "系统提示音" : "聊天栏提示";
+                _ = ChatInChinese.SystemMessage(ANSI2UTF8($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>切换提示模式</STYL>\n{tmp}"), 0, 0, 1);
+            */
             });
         }
         public void RemoveHotkeys()
@@ -210,16 +223,25 @@ namespace HunterPie.Plugins.Example
             }
 
         }
+
         public void HotkeyCallback(char cmd)
         {
+            if (!is_monster_selected)
+            {
+                //considering that only one SystemMessage can be shown at a short interval
+                _ = chatInChinese.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>尚未选择怪物</STYL>使用ALT+T切换", 0, 0, 1);
+                _ = chatInChinese.Say("尚未选择怪物，使用ALT+T切换");
+                return;
+            }
+
             if (is_beep)
                 System.Media.SystemSounds.Beep.Play();
             else
-                _ = Chat.Say($"Alt+{cmd}: {cmdExplanations[cmd][selectedID]}");
+                _ = chatInChinese.Say($"Alt+{cmd}: {cmdExplanations[cmd][selectedID]}");
 
             LockStaminaAndHealth();
             StopThread();
-            this.Log($"ALT+{cmd}");
+            this.Log($"Alt+{cmd}: {cmdExplanations[cmd][selectedID]}");
 
             FieldInfo fieldInfo = typeof(Monster).GetField("monsterAddress", BindingFlags.Instance | BindingFlags.NonPublic);
             MonsterAddress = (long)fieldInfo.GetValue(Context.HuntedMonster);
@@ -316,6 +338,56 @@ namespace HunterPie.Plugins.Example
             {
                 sw.WriteLine($"{tar.Name},{tar.ActionId},{tar.ActionReferenceName},{tar.ActionName}");
             }
+        }
+
+        private void DebugTest()
+        {
+           // _ = chatInChinese.Say("123中文测试abc");
+        }
+
+    }
+
+    public class ChatInChinese
+    {
+        Client client = new Client();
+        MethodInfo sendRawAsync;
+
+        public void Init()
+        {
+            Type type = client.GetType();
+            BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            MethodInfo m = type.GetMethod("Connect", flags);
+            _ = m.Invoke(client, null);
+
+            sendRawAsync = type.GetMethod("SendRawAsync", flags);
+        }
+        public bool Say(string str)
+        {
+            byte[] message = new byte[256];
+            BitConverter.GetBytes((int)OPCODE.SendChatMessage).CopyTo(message, 0);
+            BitConverter.GetBytes((uint)1).CopyTo(message, 4);
+            System.Text.Encoding.GetEncoding("UTF-8").GetBytes(str).CopyTo(message, 8);
+
+
+            _ = sendRawAsync.Invoke(client, new object[] { message });
+
+            return true;
+        }
+
+        public bool SystemMessage(string str, float unk1, uint unk2, byte isPurple)
+        {
+            byte[] message = new byte[256];
+            BitConverter.GetBytes((int)OPCODE.SendSystemMessage).CopyTo(message, 0);
+            BitConverter.GetBytes((uint)1).CopyTo(message, 4);
+            System.Text.Encoding.GetEncoding("UTF-8").GetBytes(str).CopyTo(message, 8);
+            BitConverter.GetBytes((float)1).CopyTo(message, 246);
+            BitConverter.GetBytes((uint)1).CopyTo(message, 250);
+            BitConverter.GetBytes((byte)1).CopyTo(message, 254);
+
+
+            _ = sendRawAsync.Invoke(client, new object[] { message });
+
+            return true;
         }
     }
 }
