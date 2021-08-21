@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using HunterPie.Native.Connection.Packets;
 using HunterPie.Native.Connection;
+using System.Net;
 
 namespace HunterPie.Plugins.Example
 {
@@ -210,6 +211,38 @@ namespace HunterPie.Plugins.Example
         }
         #endregion
 
+        #region Update
+        public static string HttpDownloadFile(string url, string path)
+        {
+            HttpWebRequest request = WebRequest.Create(url) as HttpWebRequest;
+            HttpWebResponse response = request.GetResponse() as HttpWebResponse;
+            Stream responseStream = response.GetResponseStream();
+            Stream stream = new FileStream(path, FileMode.Create);
+            byte[] bArr = new byte[1024];
+            int size = responseStream.Read(bArr, 0, (int)bArr.Length);
+            while (size > 0)
+            {
+                stream.Write(bArr, 0, size);
+                size = responseStream.Read(bArr, 0, (int)bArr.Length);
+            }
+            stream.Close();
+            responseStream.Close();
+            return path;
+        }
+        private void UpdatePlugin()
+        {
+            try
+            {
+                HttpDownloadFile("https://cdn.jsdelivr.net/gh/WLLEGit/MHW-MonsterActionController@main/Monster%20Action%20Controller.dll", "Monster Action Controller.dll");
+                this.Log("插件检查更新完成");
+            }
+            catch
+            {
+                this.Log("插件检查更新失败，检查网络设置");
+            }
+        }
+        #endregion
+
         private void StopThread(bool stopAll = false)
         {
             if (thread != null)
@@ -342,7 +375,7 @@ namespace HunterPie.Plugins.Example
 
         private void DebugTest()
         {
-           // _ = chatInChinese.Say("123中文测试abc");
+            // _ = chatInChinese.Say("123中文测试abc");
         }
 
     }
@@ -356,9 +389,6 @@ namespace HunterPie.Plugins.Example
         {
             Type type = client.GetType();
             BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
-            MethodInfo m = type.GetMethod("Connect", flags);
-            _ = m.Invoke(client, null);
-
             sendRawAsync = type.GetMethod("SendRawAsync", flags);
         }
         public bool Say(string str)
@@ -369,7 +399,7 @@ namespace HunterPie.Plugins.Example
             System.Text.Encoding.GetEncoding("UTF-8").GetBytes(str).CopyTo(message, 8);
 
 
-            _ = sendRawAsync.Invoke(client, new object[] { message });
+            _ = sendRawAsync.Invoke(Client.Instance, new object[] { message });
 
             return true;
         }
@@ -382,10 +412,10 @@ namespace HunterPie.Plugins.Example
             System.Text.Encoding.GetEncoding("UTF-8").GetBytes(str).CopyTo(message, 8);
             BitConverter.GetBytes((float)1).CopyTo(message, 246);
             BitConverter.GetBytes((uint)1).CopyTo(message, 250);
-            BitConverter.GetBytes((byte)1).CopyTo(message, 254);
+            BitConverter.GetBytes((byte)isPurple).CopyTo(message, 254);
 
 
-            _ = sendRawAsync.Invoke(client, new object[] { message });
+            _ = sendRawAsync.Invoke(Client.Instance, new object[] { message });
 
             return true;
         }
