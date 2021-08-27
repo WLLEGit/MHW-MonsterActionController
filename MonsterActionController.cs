@@ -16,12 +16,12 @@ using HunterPie.Native.Connection.Packets;
 using HunterPie.Native.Connection;
 using System.Net;
 
-namespace HunterPie.Plugins.Example
+namespace HunterPie.Plugins.MonsterActionController
 {
     public class MonsterActionController : IPlugin
     {
         // This is your plugin name
-        public string Name { get; set; } = "Monster Action Controller";
+        public string Name { get; set; } = "MonsterActionController";
 
         // This is your plugin description, try to be as direct as possible on what your plugin does
         public string Description { get; set; } = "A plugin to enable you to control the action of monsters";
