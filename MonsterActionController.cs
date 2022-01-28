@@ -15,6 +15,7 @@ using System.Runtime.InteropServices;
 using HunterPie.Native.Connection.Packets;
 using HunterPie.Native.Connection;
 using System.Net;
+using System.Linq;
 
 namespace HunterPie.Plugins.MonsterActionController
 {
@@ -46,18 +47,18 @@ namespace HunterPie.Plugins.MonsterActionController
         public ChatInChinese chatInChinese = new ChatInChinese();
 
         readonly List<string> monsterNameList = new List<string>() { };
-        readonly Dictionary<char, List<int>> cmdValues = new Dictionary<char, List<int>>() {
-            { 'J', new List< int>(){} },
-            { 'K', new List<int>() {} },
-            { 'L', new List<int>() {} },
-            { 'U', new List<int>() {} },
-            { 'O', new List<int>() {} },
-             { 'B', new List<int>() {} } ,
-              { 'N', new List<int>() {} },
-              { 'M', new List<int>() {} },
-              { 'Z', new List<int>() {} },
-              { 'V', new List<int>() {} },
-              { 'P', new List<int>() {} } };
+        readonly Dictionary<char, List<ActionGroup>> cmdValues = new Dictionary<char, List<ActionGroup>>() {
+            { 'J', new List<ActionGroup>(){} },
+            { 'K', new List<ActionGroup>() {} },
+            { 'L', new List<ActionGroup>() {} },
+            { 'U', new List<ActionGroup>() {} },
+            { 'O', new List<ActionGroup>() {} },
+             { 'B', new List<ActionGroup>() {} } ,
+              { 'N', new List<ActionGroup>() {} },
+              { 'M', new List<ActionGroup>() {} },
+              { 'Z', new List<ActionGroup>() {} },
+              { 'V', new List<ActionGroup>() {} },
+              { 'P', new List<ActionGroup>() {} } };
         readonly Dictionary<char, List<string>> cmdExplanations = new Dictionary<char, List<string>>() {
             { 'J', new List< string>(){} },
             { 'K', new List<string>() {} },
@@ -105,7 +106,7 @@ namespace HunterPie.Plugins.MonsterActionController
             {
                 for (int j = 0; j < cnt; ++j)
                 {
-                    cmdValues[data[i][0][0]].Add(int.Parse(data[i][2 * j + 1]));
+                    cmdValues[data[i][0][0]].Add(new ActionGroup(data[i][2 * j + 1]));
                     cmdExplanations[data[i][0][0]].Add(data[i][2 * j + 2]);
                 }
             }
@@ -166,14 +167,16 @@ namespace HunterPie.Plugins.MonsterActionController
                 }
             });
 
-            hotkeyIds[7] = Hotkey.Register("Alt+T", () => {
+            hotkeyIds[7] = Hotkey.Register("Alt+T", () =>
+            {
                 is_monster_selected = true;
                 selectedID = (selectedID + 1) % maxID;
                 this.Log($"切换到: {monsterNameList[selectedID]}");
                 _ = chatInChinese.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>切换到怪物</STYL>\n{monsterNameList[selectedID]}", 0, 0, 1);
             });
 
-            hotkeyIds[8] = Hotkey.Register("Alt+S", () => {
+            hotkeyIds[8] = Hotkey.Register("Alt+S", () =>
+            {
                 StopThread();
                 _ = chatInChinese.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>Alt+S</STYL>\n", 0, 0, 1);
             });
@@ -182,7 +185,8 @@ namespace HunterPie.Plugins.MonsterActionController
 
             hotkeyIds[16] = Hotkey.Register("Alt+1", () => { StopThread(true); });
 
-            hotkeyIds[17] = Hotkey.Register("Alt+R", () => {/*
+            hotkeyIds[17] = Hotkey.Register("Alt+R", () =>
+            {/*
                 is_beep = !is_beep;
                 string tmp = is_beep ? "系统提示音" : "聊天栏提示";
                 _ = ChatInChinese.SystemMessage(ANSI2UTF8($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>切换提示模式</STYL>\n{tmp}"), 0, 0, 1);
@@ -208,38 +212,6 @@ namespace HunterPie.Plugins.MonsterActionController
             Context.FirstMonster.OnActionChange -= OnMonsterActionChangeCallBack;
             Context.SecondMonster.OnActionChange -= OnMonsterActionChangeCallBack;
             Context.ThirdMonster.OnActionChange -= OnMonsterActionChangeCallBack;
-        }
-        #endregion
-
-        #region Update
-        public static string HttpDownloadFile(string url, string path)
-        {
-            HttpWebRequest request = WebRequest.Create(url) as HttpWebRequest;
-            HttpWebResponse response = request.GetResponse() as HttpWebResponse;
-            Stream responseStream = response.GetResponseStream();
-            Stream stream = new FileStream(path, FileMode.Create);
-            byte[] bArr = new byte[1024];
-            int size = responseStream.Read(bArr, 0, (int)bArr.Length);
-            while (size > 0)
-            {
-                stream.Write(bArr, 0, size);
-                size = responseStream.Read(bArr, 0, (int)bArr.Length);
-            }
-            stream.Close();
-            responseStream.Close();
-            return path;
-        }
-        private void UpdatePlugin()
-        {
-            try
-            {
-                HttpDownloadFile("https://cdn.jsdelivr.net/gh/WLLEGit/MHW-MonsterActionController@main/Monster%20Action%20Controller.dll", "Monster Action Controller.dll");
-                this.Log("插件检查更新完成");
-            }
-            catch
-            {
-                this.Log("插件检查更新失败，检查网络设置");
-            }
         }
         #endregion
 
@@ -284,11 +256,20 @@ namespace HunterPie.Plugins.MonsterActionController
 
             thread = new Thread(() =>
             {
-                while (true)
+                ActionGroup actions = cmdValues[cmd][selectedID];
+                do
                 {
-                    if (Kernel.Read<int>(actionPointer) != cmdValues[cmd][selectedID])
-                        Kernel.Write<int>(actionPointer, cmdValues[cmd][selectedID]);
-                }
+                    foreach (ActionGroup.ActionPair act in actions.actions)
+                    {
+                        DateTime start = DateTime.Now;
+                        DateTime end = start.AddSeconds(act.duration);
+                        while (DateTime.Now < end)
+                        {
+                            if (Kernel.Read<int>(actionPointer) != act.id)
+                                Kernel.Write<int>(actionPointer, act.id);
+                        }
+                    }
+                } while (actions.isRepeat);
             });
             thread.Start();
         }
@@ -418,6 +399,39 @@ namespace HunterPie.Plugins.MonsterActionController
             _ = sendRawAsync.Invoke(Client.Instance, new object[] { message });
 
             return true;
+        }
+    }
+    public class ActionGroup
+    {
+        public class ActionPair
+        {
+            public int id;
+            public float duration;
+            public ActionPair(int id, float dur)
+            {
+                this.id = id;
+                this.duration = dur;
+            }
+        }
+        public readonly bool isRepeat = false;
+        public readonly List<ActionPair> actions = new List<ActionPair>();
+        public ActionGroup(string config)
+        {
+            if (config.StartsWith("REPEAT:"))
+            {
+                isRepeat = true;
+                config = config.Substring(7);
+            }
+
+            List<string> tmp = config.Split('/').ToList();
+            if ((tmp.Count & 1) == 1)
+            {
+                tmp.Add("86400");
+            }
+            for (int i = 0; i < tmp.Count / 2; ++i)
+            {
+                actions.Add(new ActionPair(int.Parse(tmp[2 * i]), float.Parse(tmp[2 * i + 1])));
+            }
         }
     }
 }
