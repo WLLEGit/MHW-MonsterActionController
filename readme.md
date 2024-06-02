@@ -1,4 +1,4 @@
-# MonsterActionController（更新到2.5）
+# MonsterActionController
 
 怪物猎人世界（冰原）怪物动作控制插件（基于HunterPie）
 
@@ -8,121 +8,201 @@
 
 bilibili演示效果：https://www.bilibili.com/video/BV1xv411K7uk
 
-## 一、功能介绍
+项目地址：https://github.com/WLLEGit/MHW-MonsterActionController
 
-![](readme/image-20210809195532703.png)
+![](readme.assets/image-20210809195532703.png)
 
 HunterPie作为一款操作简便的显血软件被猎人们广泛使用，不过它实际上对整个怪猎的内存进行了分析，也提供了便利的接口供二次开发。本插件就是在其提供的接口上开发出的怪物出招控制插件。
 
-**关于插件安装：**将`MonsterActionController.dll`和`module.json`拖入`<HunterPie目录>\Modules\MonsterActionController`文件夹中即可。若需要修改脚本，则将`MonsterActionController.cs`和`module.json`拖入，每次HunterPie启动时会编译脚本。
+## 插件安装
 
-### 1）基础使用
+### 正常安装
 
-插件通过快捷键使用，目前只对黑龙的动作进行了适配，不过我提供了简便的方法供使用者拓展，也欢迎所有人提交其他怪物的适配。
+1. 下载Hunterpie v1: https://www.nexusmods.com/monsterhunterworld/mods/2645
+2. 将`<HunterPie目录>\address`目录下的`MonsterHunterWorld.421631.map`复制一份，改名为`MonsterHunterWorld.421740.map`，放在同一文件夹下
+   - 如果后续怪猎又有更新，421740这个数字会变。hunterpie启动的时候会显示`Detected game version (42xxxx) not mapped`，改成这个`42xxxx`。
 
-目前版本限全图只有一个怪物的情况，**使用对应快捷键会锁定使用该技能，按下Alt+S中止**，也可以直接按其他技能快捷键切换其他技能。目前支持了黑龙、雷狼龙的快捷键，下面以黑龙为例：
+3. 新建`<HunterPie目录>\Modules\MonsterActionController`文件夹，将以下文件拖入。
+   - MonsterActionController.dll
+   - module.json
+   - plugin.settings.json
+   - actions.csv
 
-| 快捷键 | 技能/功能      | 游戏内技能代号/详述                                          |
-| ------ | -------------- | ------------------------------------------------------------ |
-| Alt+D  | 启用Debug      | 开启数据保存，怪物的出招和对应的数字代号将保存到HunterPie同级的Actionlog.csv中 |
-| Alt+T  | 切换怪物       | 在所有适配的怪物之间切换，控制台会显示当前怪物。             |
-| Alt+S  | 停止锁招       | 按下后停止控制怪物出招                                       |
-| Alt+E  | 骑乘           | 需要先积累至少1点骑乘值，如虫棍空中攻击                      |
-| Alt+R  | 切换按键提示   | 切换按下快捷键的通知方式。在系统提示音和发送聊天信息两种模式间切换。（2.4开始只支持后者） |
-| Alt+J  | 单次火球       | 88 / L2 Breath Single                                        |
-| Alt+K  | 胸前直线火     | 135 / L2 Line Fire Shoot                                     |
-| Alt+L  | 扇形火         | 154 / L2 Special Wide Range Fire Shoot                       |
-| Alt+U  | 直线多延时爆弹 | 131 / L2 Vertical Escape Dust Explosion Start                |
-| Alt+O  | 小前咬         | 78 / L4 Short Bite                                           |
-| Alt+B  | 胸前向下吐息   | 137 / L2 Under Breath                                        |
-| Alt+N  | 180°甩尾       | 76 / L2 Tail Swing                                           |
-| Alt+M  | 车             | 53 / L4 Rush Start                                           |
-| Alt+Z  | 360°喷火       | 155 / L4 All Angle Breath                                    |
-| Alt+V  | 吐延时爆弹     | 81 / L2 Quick Breath                                         |
-| Alt+P  | 下压           | 73 / L2 Switch L4 Body Press                                 |
+**注意：**
 
-### 2）拓展（看下面2.0版本）
+1. `MonsterActionController`文件夹名字不能错
+2. 使用最新版的Hunterpie **v1**而不是v2
 
-如果你想要控制其他怪物，需要**自行找到该怪物技能对应的ActionID**，此节简单讲解插件原理，并讲述拓展适配的方法。
+### 源码安装
 
-#### **原理**（可以不看）
+若需要修改脚本，则额外将`MonsterActionController.cs`放入，每次HunterPie启动时会编译脚本。
 
-MHW怪物出招由一个int型的**ActionID**控制，当怪物一个技能放完会根据此ID进行下一动作，不过怪物**AI会根据情况不同不断更新这个值**，导致简单的一次修改ActionID并不能控制其出招，即使是CE的内存锁定频率也太低，实测不能达到效果。HunterPie在游戏中提供了怪物技能实时显示，自然也给出了ActionID的内存位置（具体位置`actionPointer = MonsterAddress + 0x61C8 + 0xB0`），我们通过开一个线程用**while循环高频向此地址写入**想要的技能，即可达到目的，而Alt+S快捷键的作用便是中止该线程的运行。
+## 基础使用
 
-#### 如何拓展其他怪物
+插件通过快捷键使用，先用`Alt+T`切换至所需怪物，然后按对应快捷键锁定，按`Alt+S`停止。
 
-拓展一个怪物可能用不上二十分钟的时间，**流程非常简洁**。
+内置快捷键，不可更改：
 
-**按下Alt+D快捷键开启数据自动保存**，和目标怪物进行一场狩猎，怪物的出招和对应的数字代号将保存到HunterPie同级的Actionlog.csv中，格式如下：
+| 快捷键 | 技能/功能 | 游戏内技能代号/详述                                          |
+| ------ | --------- | ------------------------------------------------------------ |
+| Alt+D  | 启用Debug | 开启数据保存，怪物的出招和对应的数字代号将保存到HunterPie同级的Actionlog.csv中 |
+| Alt+T  | 切换怪物  | 在所有适配的怪物之间切换，控制台及聊天栏会显示。             |
+| Alt+S  | 停止锁招  | 停止控制怪物出招                                             |
+| Alt+E  | 骑乘      | 需要先积累至少1点骑乘值，如虫棍空中攻击                      |
 
-![image-20210809205730259](readme/image-20210809205730259.png)
+控制快捷键，可以更改：
 
-（ActionName可能不是很好理解，不过HunterPie在狩猎中会在怪物部件显示当前出招，留心一下需要的技能名称即可，在表中找到对应的ActionID进行下一步。）
+取决于`actions.csv`内的设置，以仓库默认文件为例，按下第一列快捷键锁定对应技能。
 
-**MonsterActionController.cs的37-52行**是拓展需要关注的内容，如果你有任何语言编程基础，那么看懂此段C#代码应该很轻松，如果没有也只需要按照下述操作即可：
+| 快捷键 | 黑龙 | 技能注释       | 雷狼龙 | 技能注释                   |
+| ------ | ---- | -------------- | ------ | -------------------------- |
+| Alt+J  | 88   | 单次火球       | 73     | Strong Punch R Lightning   |
+| Alt+K  | 135  | 胸前直线火     | 97     | 车Dash Attack              |
+| Alt+L  | 154  | 扇形火         | 60     | 铁山靠Shoulder Tackle      |
+| Alt+U  | 131  | 直线多延时爆弹 | 88     | Lightning Ball2 Ren To Fox |
 
-![screenshoot](readme/screenshoot.png)
+只有调试模式下会在控制技能时聊天框显示当前技能，不开启调试则10s左右弹出一条提示，这样既保证了联机队友知晓插件的存在，也不会影响体验。
 
-**区域1**代表怪物名称，该名称只是在切换怪物时给用户看的，并不需要切合正规名称，但务必保证数量正确。
+## 自定义控制
 
-**区域2**代表ActionID，如`'J'`右边花括号里代表`Alt+J`快捷键锁定的技能，将拓展的ActionId（也就是excel表第二列内容）补充到花括号里即可，每一列对应上面名称的每一个。
+如果你想要控制其他怪物或技能，需要**自行找到该怪物技能对应的ActionID，然后填写`actions.csv`**
 
-**以添加灭尽龙为例**：（ActionID是瞎编的）
+### 原理
 
-![image-20210809211706711](readme/image-20210809211706711.png)
+MHW怪物出招由一个int型的**ActionID**控制，当怪物一个技能放完会根据此ID进行下一动作，不过怪物**AI会根据情况不同不断更新这个值**，导致简单的一次修改ActionID并不能控制其出招，即使是CE的内存锁定频率也太低，实测不能达到效果。HunterPie在游戏中提供了怪物技能实时显示，自然也给出了ActionID的内存位置（具体位置`actionPointer = MonsterAddress + 0x61C8 + 0xB0`），我们通过开一个线程用**while循环高频向此地址写入**想要的技能，即可达到目的，而Alt+S快捷键的作用便是中止该线程的运行。连招控制更为复杂，需要了解的看源码。
 
-**总结起来只有三步：**
+### 获取ActionID
 
-1. Alt+D打开Debug模式，和目标怪物进行一次狩猎。
-2. 查看Actionlog.csv，挑选需要的ActionID
-3. 将ActionID填入MonsterActionController.cs的对应位置
-4. 重启HunterPie即可
+使用`Alt+D`快捷键，看到局内聊天出现“调试模式 开启”的提示后，会在HunterPie.exe同级目录下生成Actionlog.csv。
 
-## 二、2.0版本
+Hunterpie的显血模块会显示怪物当前出招，和表格中的ActionName对照着看。第一列为100纳秒为单位的时间戳。
 
-**新特性：**
+![image-20240602105657147](readme.assets/image-20240602105657147.png)
 
-1. **第一龙称狩猎：骑龙控招，沉浸感MAX**
-2. **大幅简化拓展流程，轻松添加其他怪物**
-3. **增加按键提示音**
-4. **增加反插件刷片机制，维护游戏环境**
+以下例子展示了黑龙三阶段前转场+飞行吐息对应的记录：
 
-### 拓展部分
+| Timestamp(100ns) | Name | ActionID | ActionReferenceName                        | ActionName                           |
+| ---------------- | ---- | -------- | ------------------------------------------ | ------------------------------------ |
+| 2121877065       | 黑龙 | 168      | nActEm013::L2StageBreathStart02            | L2 Stage Breath Start02              |
+| 2144899115       | 黑龙 | 170      | nActEm013::FlyStageBreathMoveRot02         | Fly Stage Breath Move Rot02          |
+| 2177930516       | 黑龙 | 171      | nActEm013::FlyStageBreathChargeStart02     | Fly Stage Breath Charge Start02      |
+| 2197941603       | 黑龙 | 172      | nActEm013::FlyStageBreathChargeLoop02      | Fly Stage Breath Charge Loop02       |
+| 2198779533       | 黑龙 | 173      | nActEm013::FlyStageBreath1stStart02        | Fly Stage Breath1st Start02          |
+| 2216125670       | 黑龙 | 174      | nActEm013::FlyStageBreath1stLoop02         | Fly Stage Breath1st Loop02           |
+| 2272169108       | 黑龙 | 175      | nActEm013::FlyStageBreath2ndStart02        | Fly Stage Breath2nd Start02          |
+| 2285015231       | 黑龙 | 176      | nActEm013::FlyStageBreath2ndLoop02         | Fly Stage Breath2nd Loop02           |
+| 2383425283       | 黑龙 | 177      | nActEm013::FlyStageBreath2ndEnd02          | Fly Stage Breath2nd End02            |
+| 2421621351       | 黑龙 | 178      | nActEm013::FlyStageBreathReturnStartLoop02 | Fly Stage Breath Return Start Loop02 |
+| 2481837239       | 黑龙 | 179      | nActEm013::FlyStageBreathFinalMode02       | Fly Stage Breath Final Mode02        |
+| 2529213785       | 黑龙 | 139      | nActEm013::FlyUnderBreath                  | Fly Under Breath                     |
 
-现在拓展只需要打开`HunterPie\Modules\MonsterActionController\actions.csv`表格，**在里面添加即可，不需要修改源代码。**
+### 修改actions.csv
 
-![image-20210812132037991](readme/image-20210812132037991.png)
+`actions.csv`在`<HunterPie目录>\Modules\MonsterActionController`中
 
-每一个龙**占两列**，技能注释那列**每个单元至少有一个字符，不要包含英文逗号**
+#### 表格结构
 
-### 2.1版本
+表格所有单元格**不可为空、不可包含英文逗号**
 
-1. **解决了骑乘快捷键第二次骑乘不上去的BUG**，现在只要**积累至少1点骑乘值**后，任何时候按Alt+E即可直接骑乘
-2. 优化了中文编码，actionlog.csv不会乱码了
-3. 雷狼龙的快捷键稍微做了调整
+第一行为表头，如需增加怪物，一次增加两列，偶数列列名随意不必与龙名相同
 
-### 2.2版本
+第一列为快捷键，**可以更改为任意合法快捷键**
 
-1. 增加了聊天框支持：按下Alt+R切换按下快捷键的通知方式，在系统提示音和发送聊天信息两种模式间切换。第二种方式提供详细信息（包含按下的快捷键和具体的技能名（中文会乱码））。其他快捷键也会给出侧边通知。
+偶数列为动作配置，遵循后文所述语法
 
-### 2.3版本
+奇数列为技能注释，给用户看的，随便填
 
-1. 增加了自动更新数据软件，点击`更新MOD程序/更新MOD.exe`即可自动更新数据，添加新的龙
-2. 添加了歼世灭尽龙
+保证表格是一个矩形，其中没有空，即使技能数不够也要填充满。
 
-### 2.4版本
+#### 快捷键格式
 
-1. 插件发送的信息支持中文，技能详情不再乱码
-2. 添加了霜刃冰牙龙、激昂金狮子
-3. 默认只支持聊天栏信息提示（同时取消2.2的Alt+R功能）
+快捷键分为两部分：
 
-### 2.5版本
+1. Ctrl, Shift, Alt三个选择其中的一个或多个
+2. 键盘上的其它按键选一个，例如字母、符号、数字、F1-F12等
 
-1. 支持**连招设置**：在原来填写actionID的位置上以`<actionID/duration>`的**序对**形式依此填上连招。如`154/10.5/88/2.1/155/10.3`代表黑龙依次锁定扇形火10.5秒、单次火球2.1秒、360度火10.3秒，**支持小数**。**同时依然支持填写单个actionID**。此外这是个不正确例子，原因参见注意事项。
-2. 支持**循环连招**：为了方便练习，支持循环某一套技能（可以是单个也可以是连招）。使用方式：在1中字符串前加上`REPEAT:`，如`REPEAT:154/10/88/2/155/10`表示循环10+2+10的连招
+元素之间用+号连接，例如`Ctrl+Q`,`Ctrl+Shift+2`, `Ctrl+Shift+Alt+F12`,`Ctrl+OemSemicolon`
 
-**注意事项**：锁定10s不代表10s后该技能就会结束，如黑龙扇形火大概9秒，那么我的上述连招会导致释放两个扇形火共18秒，吞掉了2秒的单次火球和6秒的360度火。最好是在该技能结束前切换锁定下一个技能，如扇形火9秒，那么扇形火只锁定8秒，提前切换到下一个技能的锁定。也即锁定的**切换**最好在一个技能**释放的过程之中**。
+由于Hunterpie代码的问题，小键盘数字（九宫格）用不了，只能用字母区域上面的数字
 
-`actions.csv`示例：
+符号的英文表示查看[KeyboardHook.cs](https://github.com/HunterPie/HunterPie-legacy/blob/master/HunterPie.Core/Core/Input/KeyboardHook.cs)，一些例子：分号 `OemSemicolon`；引号`OemQuotes`；左方括号`OemOpenBrackets`；逗号`Oemcomma`。
 
-![image-20220128212948005](readme/image-20220128212948005.png)
+如果注册失败会在控制台显示”快捷键xxx注册失败“，可能是和其它应用冲突（例如英伟达控制面板的`Alt+Z`）
+
+#### 单技能语法
+
+单元格填写一个数字（ActionID），持续锁定该技能。例：
+
+| 黑龙 | 技能注释 |
+| ---- | -------- |
+| 154  | 扇形火   |
+
+#### 连招语法
+
+将以几个例子，介绍连招语法
+
+| 黑龙连招                                                | 技能注释            |
+| ------------------------------------------------------- | ------------------- |
+| REPEAT:140-141-89-90                                    | 侧身火场-怒后三连火 |
+| REPEAT:168-170-171@0.01-172-173-174-175-176-177-178-179 | 三阶段过场          |
+
+**侧身火场-怒后三连火：**
+
+1. "REPEAT:"前缀表示重复执行该连招。不写则只执行一次。
+2. '-'分割的数字表示依次执行
+3. 140-141为侧身火场
+4. 89-90为怒后三连火
+
+**三阶段过场：**
+
+注意到新语法`172@0.01`
+
+这表示172的强制锁定时间为0.01s，如果不指定则为默认0.2s。
+
+为什么要这么做？看“获取ActionID”节中的表格，172至173间隔时间只有0.08s，如果锁定0.2s会导致抽搐。
+
+如果发现怪物抽搐或锁不住，尝试根据动作持续时间修改锁定时间。
+
+| 激昂金狮子连招         | 技能注释 |
+| ---------------------- | -------- |
+| REPEAT:307-308         | 雷球     |
+| REPEAT:328-329/330-331 | 溜溜球   |
+
+**雷球**：
+
+语法同前，金狮子很多看上去是单个的技能实际上是小动作组成的
+
+**溜溜球**：
+
+注意到新语法`329/330`
+
+溜溜球由三个动作组成，其中第二个会根据猎人位置选择`Ex To Jump Rolling Attack L`和`Ex To Jump Rolling Attack R`中的一个。
+
+'/'表示备选，插件锁定时会锁其中的第一个，如果怪物AI主动换到了其中其它的则插件不会更改。
+
+'-', '/', '@'三种符号可以混合使用，例如`123-234@0.01/345/456-567`，@符号只作用于备选动作的第一个，其它可以写但不生效
+
+#### 完整语法
+
+这一节给出严谨的上下文无关文法描述。如果之前的技能语法介绍有不清楚的地方可以看这个。
+
+```
+ActionConfig -> RepeatConfig ActionList
+RepeatConfig -> "REPEAT:" | ε
+ActionList -> ActionCandidates ActionListOpt
+ActionListOpt -> '-' ActionCandidates ActionListOpt | ε
+ActionCandidates -> Action ActionCandidatesOpt
+ActionCandidatesOpt -> '/' Action ActionCandidatesOpt | ε
+Action -> ActionID | ActionID '@' Duration
+ActionID -> int
+Duration -> float
+```
+
+注释：
+
+1. ActionConfig为单元格内容，不可有空格
+2. Duration单位为秒
+3. ActionCandidates的作用：如果怪物AI主动更改的下一个ID不在其中，则锁定第一个，如果在则不更改，适用于分左右的派生情况（如激昂金狮子溜溜球）。
+4. ActionList：会被依次执行
+5. Action：如果不标注Duration则为默认0.2s，这个0.2s是强制锁定时间，并不是技能持续时间，不必与实际持续时间相同。如果发现怪物抽搐或锁不住，尝试根据动作持续时间修改锁定时间。
+

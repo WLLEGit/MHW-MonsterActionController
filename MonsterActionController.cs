@@ -16,6 +16,10 @@ using HunterPie.Native.Connection.Packets;
 using HunterPie.Native.Connection;
 using System.Net;
 using System.Linq;
+using HunterPie.Core.Settings;
+using System.Timers;
+using System.IO.Pipes;
+using static HunterPie.Plugins.MonsterActionController.ActionList;
 
 namespace HunterPie.Plugins.MonsterActionController
 {
@@ -25,68 +29,55 @@ namespace HunterPie.Plugins.MonsterActionController
         public string Name { get; set; } = "MonsterActionController";
 
         // This is your plugin description, try to be as direct as possible on what your plugin does
-        public string Description { get; set; } = "A plugin to enable you to control the action of monsters";
+        public string Description { get; set; } = "A plugin for controlling the action of monsters";
 
         // This is our game context, you'll use it to track in-game information and hook events
         public Game Context { get; set; }
 
         private long MonsterAddress { get; set; }
-        private Thread thread;
+        private Thread lockActionThread;
         private Thread lockMountThread;
         private Thread lockHealthThread;
+        private Thread actionTraceThread;
+
         private Monster targetMonster;
 
-        private int selectedID = 0;
-        private int maxID;
+        private int selectedID = -1;
 
-        bool is_debugging = false;
-        bool is_health_locked = false;
-        bool is_beep = false;
-        bool is_monster_selected = false;
+        private bool isDebugging = false;
+
+        private bool isHealthLocked = false;
+
+        private bool isMonsterSelected = false;
+
+        private readonly DateTime launchTime = DateTime.Now;
 
         public ChatInChinese chatInChinese = new ChatInChinese();
+          
+        List<string> monsterNameList = new List<string>() { };
+        Dictionary<string, List<ActionList>> cmdValues = new Dictionary<string, List<ActionList>>() {};
+        Dictionary<string, List<string>> cmdExplanations = new Dictionary<string, List<string>>() {};
 
-        readonly List<string> monsterNameList = new List<string>() { };
-        readonly Dictionary<char, List<ActionGroup>> cmdValues = new Dictionary<char, List<ActionGroup>>() {
-            { 'J', new List<ActionGroup>(){} },
-            { 'K', new List<ActionGroup>() {} },
-            { 'L', new List<ActionGroup>() {} },
-            { 'U', new List<ActionGroup>() {} },
-            { 'O', new List<ActionGroup>() {} },
-             { 'B', new List<ActionGroup>() {} } ,
-              { 'N', new List<ActionGroup>() {} },
-              { 'M', new List<ActionGroup>() {} },
-              { 'Z', new List<ActionGroup>() {} },
-              { 'V', new List<ActionGroup>() {} },
-              { 'P', new List<ActionGroup>() {} } };
-        readonly Dictionary<char, List<string>> cmdExplanations = new Dictionary<char, List<string>>() {
-            { 'J', new List< string>(){} },
-            { 'K', new List<string>() {} },
-            { 'L', new List<string>() {} },
-            { 'U', new List<string>() {} },
-            { 'O', new List<string>() {} },
-             { 'B', new List<string>() {} } ,
-              { 'N', new List<string>() {} },
-              { 'M', new List<string>() {} },
-              { 'Z', new List<string>() {} },
-              { 'V', new List<string>() {} },
-              { 'P', new List<string>() {} } };
+        private System.Timers.Timer notifyAliveTimer = new System.Timers.Timer(10000);
 
         #region Load Config: actions.csv
         public static List<String[]> ReadCSV(string filePathName)
         {
             List<String[]> ls = new List<String[]>();
-            StreamReader fileReader = new StreamReader(filePathName, Encoding.Default);
-            string strLine = "";
-            while (strLine != null)
+            using (FileStream fileStream = new FileStream(filePathName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (StreamReader fileReader = new StreamReader(fileStream, Encoding.Default))
             {
-                strLine = fileReader.ReadLine();
-                if (strLine != null && strLine.Length > 0)
+                string strLine = "";
+                while (strLine != null)
                 {
-                    ls.Add(strLine.Split(','));
+                    strLine = fileReader.ReadLine();
+                    if (strLine != null && strLine.Length > 0)
+                    {
+                        ls.Add(strLine.Split(','));
+                    }
                 }
             }
-            fileReader.Close();
+             
             return ls;
         }
 
@@ -95,19 +86,25 @@ namespace HunterPie.Plugins.MonsterActionController
             if (!File.Exists("Modules\\MonsterActionController\\actions.csv"))
             {
                 this.Error("找不到HunterPie\\Modules\\MonsterActionController\\actions.csv配置文件！");
-                this.Error("HunterPie\\Modules\\MonsterActionController\\actions.csv NOT FOUND!");
             }
 
             List<string[]> data = ReadCSV("Modules\\MonsterActionController\\actions.csv");
-            int cnt = (data[0].Length - 1) / 2;
-            for (int i = 0; i < cnt; ++i)
+            int monsterCnt = (data[0].Length - 1) / 2;
+            int hotkeyCnt = (data.Count - 1);
+
+            for (int i = 0; i < monsterCnt; ++i)
                 monsterNameList.Add(data[0][2 * i + 1]);
-            for (int i = 1; i <= 11; ++i)
+            for (int i = 1; i <= hotkeyCnt; ++i)
             {
-                for (int j = 0; j < cnt; ++j)
+                string hotkey = data[i][0];
+                if (hotkey.Length == 1)
+                    hotkey = $"Alt+{hotkey}";   // Backward compatibility
+                cmdValues[hotkey] = new List<ActionList>();
+                cmdExplanations[hotkey] = new List<string>();
+                for (int j = 0; j < monsterCnt; ++j)
                 {
-                    cmdValues[data[i][0][0]].Add(new ActionGroup(data[i][2 * j + 1]));
-                    cmdExplanations[data[i][0][0]].Add(data[i][2 * j + 2]);
+                    cmdValues[hotkey].Add(new ActionList(data[i][2 * j + 1]));
+                    cmdExplanations[hotkey].Add(data[i][2 * j + 2]);
                 }
             }
         }
@@ -121,11 +118,13 @@ namespace HunterPie.Plugins.MonsterActionController
             LoadConfig();
             Context = context;
             MonsterAddress = 0;
-            maxID = monsterNameList.Count;
+            notifyAliveTimer.Elapsed += (s, e) => chatInChinese.Say("MonsterActionController 运行中");
+            notifyAliveTimer.AutoReset = false;
 
             CreateHotkeys();
             HookEvents();
 
+            this.Log("MonsterActionController Initialized");
         }
 
         public void Unload()
@@ -135,68 +134,108 @@ namespace HunterPie.Plugins.MonsterActionController
             UnhookEvents();
         }
 
-        readonly int[] hotkeyIds = new int[18];
+        private int[] hotkeyIds = new int[128];
+        private int hotkeyCnt = 0;
+
+        private void LocalHotkeyRegister(string keys, Action callback)
+        {
+            int hotkeyId = Hotkey.Register(keys, callback);
+            if (hotkeyId == -1)
+                this.Error($"快捷键 {keys} 注册失败");
+            hotkeyIds[hotkeyCnt++] = hotkeyId;
+        }
+
         public void CreateHotkeys()
         {
-            hotkeyIds[0] = Hotkey.Register("Alt+J", () => { HotkeyCallback('J'); });
-            hotkeyIds[1] = Hotkey.Register("Alt+K", () => { HotkeyCallback('K'); });
-            hotkeyIds[2] = Hotkey.Register("Alt+L", () => { HotkeyCallback('L'); });
-            hotkeyIds[3] = Hotkey.Register("Alt+U", () => { HotkeyCallback('U'); });
-            hotkeyIds[4] = Hotkey.Register("Alt+I", () => { /*key conflict*/ });
-            hotkeyIds[5] = Hotkey.Register("Alt+O", () => { HotkeyCallback('O'); });
-            hotkeyIds[9] = Hotkey.Register("Alt+B", () => { HotkeyCallback('B'); });
-            hotkeyIds[10] = Hotkey.Register("Alt+N", () => { HotkeyCallback('N'); });
-            hotkeyIds[11] = Hotkey.Register("Alt+M", () => { HotkeyCallback('M'); });
-            hotkeyIds[12] = Hotkey.Register("Alt+Z", () => { HotkeyCallback('Z'); });
-            hotkeyIds[13] = Hotkey.Register("Alt+V", () => { HotkeyCallback('V'); });
-            hotkeyIds[14] = Hotkey.Register("Alt+P", () => { HotkeyCallback('P'); });
+            hotkeyCnt = 0;
 
-            hotkeyIds[6] = Hotkey.Register("Alt+D", () =>
+            LocalHotkeyRegister("Alt+D", () =>
             {
-                DebugTest();
-                is_debugging = !is_debugging;
-                this.Log($"is_debugging: {is_debugging}");
-                string tmp = is_debugging ? "开启" : "关闭";
-                _ = chatInChinese.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>DEBUG&SAVE模式</STYL>\n{tmp}", 0, 0, 0);
+                isDebugging = !isDebugging;
+                this.Log($"is_debugging: {isDebugging}");
+                string tmp = isDebugging ? "开启" : "关闭";
+                _ = chatInChinese.Say($"调试模式 {tmp}");
                 if (!File.Exists("Actionlog.csv"))
                 {
                     using (StreamWriter sw = new StreamWriter(path: "Actionlog.csv", false, Encoding.Default))
                     {
-                        sw.WriteLine("Name,ActionID,ActionReferenceName,ActionName");
+                        sw.WriteLine("Timestamp(100ns),Name,ActionID,ActionReferenceName,ActionName");
                     }
                 }
+
+                if (isDebugging && (actionTraceThread == null || !actionTraceThread.IsAlive))
+                {
+                    actionTraceThread = new Thread(() =>
+                    {
+                        using (FileStream fileStream = new FileStream("Actionlog.csv", FileMode.Append, FileAccess.Write, FileShare.Read))
+                        using (StreamWriter sw = new StreamWriter(fileStream, Encoding.Default))
+                        {
+                            FieldInfo fieldInfo = typeof(Monster).GetField("monsterAddress", BindingFlags.Instance | BindingFlags.NonPublic);
+                            int prevId = -1;
+                            while (isDebugging)
+                            {
+                                if (Context.HuntedMonster == null) continue;
+                                MonsterAddress = (long)fieldInfo.GetValue(Context.HuntedMonster);
+                                if (MonsterAddress == 0)
+                                    continue;
+
+                                long actionPointer = MonsterAddress + 0x61C8;
+                                int actionId = Kernel.Read<int>(actionPointer + 0xB0);
+
+                                if (actionId != prevId)
+                                {
+                                    prevId = actionId;
+
+                                    actionPointer = Kernel.Read<long>(actionPointer + (2 * 8) + 0x68);
+                                    actionPointer = Kernel.Read<long>(actionPointer + actionId * 8);
+                                    actionPointer = Kernel.Read<long>(actionPointer);
+                                    actionPointer = Kernel.Read<long>(actionPointer + 0x20);
+                                    uint actionOffset = Kernel.Read<uint>(actionPointer + 3);
+                                    long actionRef = actionPointer + actionOffset + 7;
+                                    actionRef = Kernel.Read<long>(actionRef + 8);
+                                    string actionRefString = Kernel.ReadString(actionRef, 64);
+                                    string ActionName = Monster.ParseActionString(actionRefString);
+                                    sw.WriteLine($"{DateTime.Now.Ticks - launchTime.Ticks},{Context.HuntedMonster?.Name},{actionId},{actionRefString},{ActionName}");
+                                    sw.Flush();
+                                }
+                            }
+                        }
+                    });
+                    actionTraceThread.Start();
+                }
+
             });
 
-            hotkeyIds[7] = Hotkey.Register("Alt+T", () =>
+            LocalHotkeyRegister("Alt+T", () =>
             {
-                is_monster_selected = true;
-                selectedID = (selectedID + 1) % maxID;
+                isMonsterSelected = true;
+                selectedID = (selectedID + 1) % monsterNameList.Count;
                 this.Log($"切换到: {monsterNameList[selectedID]}");
-                _ = chatInChinese.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>切换到怪物</STYL>\n{monsterNameList[selectedID]}", 0, 0, 1);
+                _ = chatInChinese.Say($"切换到: {monsterNameList[selectedID]}");
             });
 
-            hotkeyIds[8] = Hotkey.Register("Alt+S", () =>
+            LocalHotkeyRegister("Alt+S", () =>
             {
-                StopThread();
-                _ = chatInChinese.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>Alt+S</STYL>\n", 0, 0, 1);
+                if (lockActionThread != null)
+                    lockActionThread.Abort();
+                this.Log("停止锁定");
+                if (isDebugging)
+                    _ = chatInChinese.Say($"停止锁定");
+                else
+                    notifyAliveTimer.Enabled = true;
             });
 
-            hotkeyIds[15] = Hotkey.Register("Alt+E", () => { LockMount(); });
+            LocalHotkeyRegister("Alt+E", () => { LockMount(); });
 
-            hotkeyIds[16] = Hotkey.Register("Alt+1", () => { StopThread(true); });
-
-            hotkeyIds[17] = Hotkey.Register("Alt+R", () =>
-            {/*
-                is_beep = !is_beep;
-                string tmp = is_beep ? "系统提示音" : "聊天栏提示";
-                _ = ChatInChinese.SystemMessage(ANSI2UTF8($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>切换提示模式</STYL>\n{tmp}"), 0, 0, 1);
-            */
-            });
+            foreach (string hotkey in cmdValues.Keys)
+            {
+                LocalHotkeyRegister(hotkey, () => HotkeyCallback(hotkey));
+            }
         }
         public void RemoveHotkeys()
         {
-            foreach (int id in hotkeyIds)
-                Hotkey.Unregister(id);
+            for (int i = 0; i < hotkeyCnt; i++)
+                Hotkey.Unregister(hotkeyIds[i]);
         }
         private void HookEvents()
         {
@@ -217,8 +256,8 @@ namespace HunterPie.Plugins.MonsterActionController
 
         private void StopThread(bool stopAll = false)
         {
-            if (thread != null)
-                thread.Abort();
+            if (lockActionThread != null)
+                lockActionThread.Abort();
             if (stopAll)
             {
                 if (lockHealthThread != null)
@@ -229,24 +268,20 @@ namespace HunterPie.Plugins.MonsterActionController
 
         }
 
-        public void HotkeyCallback(char cmd)
+        public void HotkeyCallback(string hotkey)
         {
-            if (!is_monster_selected)
+            if (!isMonsterSelected)
             {
-                //considering that only one SystemMessage can be shown at a short interval
-                _ = chatInChinese.SystemMessage($"<STYL MOJI_LIGHTBLUE_DEFAULT><ICON SLG_NEWS>尚未选择怪物</STYL>使用ALT+T切换", 0, 0, 1);
                 _ = chatInChinese.Say("尚未选择怪物，使用ALT+T切换");
                 return;
             }
 
-            if (is_beep)
-                System.Media.SystemSounds.Beep.Play();
+            if (isDebugging)
+                _ = chatInChinese.Say($"{hotkey}: {cmdExplanations[hotkey][selectedID]}");
             else
-                _ = chatInChinese.Say($"Alt+{cmd}: {cmdExplanations[cmd][selectedID]}");
+                notifyAliveTimer.Enabled = true;
 
-            LockStaminaAndHealth();
-            StopThread();
-            this.Log($"Alt+{cmd}: {cmdExplanations[cmd][selectedID]}");
+            this.Log($"{hotkey}: {cmdExplanations[hotkey][selectedID]}");
 
             FieldInfo fieldInfo = typeof(Monster).GetField("monsterAddress", BindingFlags.Instance | BindingFlags.NonPublic);
             MonsterAddress = (long)fieldInfo.GetValue(Context.HuntedMonster);
@@ -254,24 +289,47 @@ namespace HunterPie.Plugins.MonsterActionController
                 return;
             long actionPointer = MonsterAddress + 0x61C8 + 0xB0;
 
-            thread = new Thread(() =>
+            lockActionThread?.Abort();
+            lockActionThread = new Thread(() =>
             {
-                ActionGroup actions = cmdValues[cmd][selectedID];
+                ActionList actionGroup = cmdValues[hotkey][selectedID];
+
                 do
                 {
-                    foreach (ActionGroup.ActionPair act in actions.actions)
+                    int initAct = Kernel.Read<int>(actionPointer), curAct = initAct;
+                    for (int i = 0; i < actionGroup.actions.Count; ++i)
                     {
-                        DateTime start = DateTime.Now;
-                        DateTime end = start.AddSeconds(act.duration);
-                        while (DateTime.Now < end)
+                        ActionList.ActionConfig expectAct = actionGroup.actions[i];
+                        ActionList.ActionConfig nextAct = null;
+                        if (i + 1 == actionGroup.actions.Count && actionGroup.isRepeat)
+                            nextAct = actionGroup.actions[0];
+                        else if (i + 1 < actionGroup.actions.Count)
+                            nextAct = actionGroup.actions[i + 1];
+
+
+                        // 等待第一次改变
+                        while (curAct == initAct)
+                            curAct = Kernel.Read<int>(actionPointer);
+                        if (!expectAct.idCandidates.Contains(curAct))
+                            Kernel.Write<int>(actionPointer, expectAct.idCandidates[0]);
+
+                        DateTime lockEnd = DateTime.Now.AddSeconds(expectAct.duration);
+
+                        while (DateTime.Now < lockEnd)
                         {
-                            if (Kernel.Read<int>(actionPointer) != act.id)
-                                Kernel.Write<int>(actionPointer, act.id);
+                            curAct = Kernel.Read<int>(actionPointer);
+                            if (!expectAct.idCandidates.Contains(curAct) && (nextAct == null || !expectAct.idCandidates.Contains(curAct)))
+                            {
+                                Kernel.Write<int>(actionPointer, expectAct.idCandidates[0]);
+                                lockEnd = DateTime.Now.AddSeconds(expectAct.duration);
+                            }
                         }
+
+                        initAct = curAct;
                     }
-                } while (actions.isRepeat);
+                } while (actionGroup.isRepeat);
             });
-            thread.Start();
+            lockActionThread.Start();
         }
 
 
@@ -285,7 +343,7 @@ namespace HunterPie.Plugins.MonsterActionController
 
         private void LockStaminaAndHealth()
         {
-            if (is_health_locked)
+            if (isHealthLocked)
                 return;
 
             lockHealthThread = new Thread(() =>
@@ -297,10 +355,10 @@ namespace HunterPie.Plugins.MonsterActionController
 
                 while (true)
                 {
-                    float maxStamina = Kernel.Read<float>(address + 0x144);
-                    float curStamina = Kernel.Read<float>(address + 0x13C);
+                    float maxStamina = Kernel.Read<float>(address + 0x130);
+                    float curStamina = Kernel.Read<float>(address + 0x12C);
                     if (maxStamina != curStamina)
-                        Kernel.Write<float>(address + 0x13C, maxStamina - 10);
+                        Kernel.Write<float>(address + 0x12C, maxStamina);
 
                     //health = Kernel.ReadStructure<float>(address + 0x60, 2);
                     //if(health[0] != health[1])
@@ -310,7 +368,7 @@ namespace HunterPie.Plugins.MonsterActionController
 
             });
             lockHealthThread.Start();
-            is_health_locked = true;
+            isHealthLocked = true;
         }
 
         private void LockMount()
@@ -345,20 +403,7 @@ namespace HunterPie.Plugins.MonsterActionController
         {
             Monster tar = (Monster)source;
             targetMonster = tar;
-
-            if (!is_debugging)
-                return;
-            using (StreamWriter sw = new StreamWriter("Actionlog.csv", append: true, encoding: Encoding.Default))
-            {
-                sw.WriteLine($"{tar.Name},{tar.ActionId},{tar.ActionReferenceName},{tar.ActionName}");
-            }
         }
-
-        private void DebugTest()
-        {
-            // _ = chatInChinese.Say("123中文测试abc");
-        }
-
     }
 
     public class ChatInChinese
@@ -401,21 +446,41 @@ namespace HunterPie.Plugins.MonsterActionController
             return true;
         }
     }
-    public class ActionGroup
+    public class ActionList
     {
-        public class ActionPair
+        public class ActionConfig
         {
-            public int id;
+            public List<int> idCandidates;
             public float duration;
-            public ActionPair(int id, float dur)
+
+            public ActionConfig(string config)
             {
-                this.id = id;
-                this.duration = dur;
+                idCandidates = new List<int>();
+                duration = 0;
+
+                List<string> actionCandidates = config.Split('/').ToList();
+                foreach (string actionCandidate in actionCandidates)
+                {
+                    if (actionCandidate.Contains("@"))
+                    {
+                        List<string> strings = actionCandidate.Split('@').ToList();
+                        idCandidates.Add(int.Parse(strings[0]));
+                        if (duration == 0)
+                            duration= float.Parse(strings[1]);
+                    }
+                    else
+                    {
+                        idCandidates.Add(int.Parse(actionCandidate));
+                    }
+                }
+
+                if (duration == 0)
+                    duration = 0.2f;
             }
         }
         public readonly bool isRepeat = false;
-        public readonly List<ActionPair> actions = new List<ActionPair>();
-        public ActionGroup(string config)
+        public readonly List<ActionConfig> actions = new List<ActionConfig>();
+        public ActionList(string config)
         {
             if (config.StartsWith("REPEAT:"))
             {
@@ -423,14 +488,18 @@ namespace HunterPie.Plugins.MonsterActionController
                 config = config.Substring(7);
             }
 
-            List<string> tmp = config.Split('/').ToList();
-            if ((tmp.Count & 1) == 1)
+            if (int.TryParse(config, out _))
             {
-                tmp.Add("86400");
+                actions.Add(new ActionConfig(config));
+                actions[0].duration = 86400;
             }
-            for (int i = 0; i < tmp.Count / 2; ++i)
+            else
             {
-                actions.Add(new ActionPair(int.Parse(tmp[2 * i]), float.Parse(tmp[2 * i + 1])));
+                List<string> actionList = config.Split('-').ToList();
+                foreach (string actionConfig in actionList)
+                {
+                    actions.Add(new ActionConfig(actionConfig));
+                }
             }
         }
     }

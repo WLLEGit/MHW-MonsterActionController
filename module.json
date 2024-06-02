@@ -1,8 +1,8 @@
 ﻿{
     "Name": "MonsterActionController",
     "EntryPoint": "MonsterActionController.cs",
-    "Description": "A plugin to enable you to control the action of monsters",
-    "Author": "LambdaLE",
-    "Version": "1.0.0",
+    "Description": "A plugin for controlling the action of monsters",
+    "Author": "Lambdale(WLLEGit@github)",
+    "Version": "3.0.0",
     "Dependencies": []
 }
