@@ -21,8 +21,8 @@ HunterPie作为一款操作简便的显血软件被猎人们广泛使用，不�
 1. 下载Hunterpie v1: https://www.nexusmods.com/monsterhunterworld/mods/2645
 2. 将`<HunterPie目录>\address`目录下的`MonsterHunterWorld.421631.map`复制一份，改名为`MonsterHunterWorld.421740.map`，放在同一文件夹下
    - 如果后续怪猎又有更新，421740这个数字会变。hunterpie启动的时候会显示`Detected game version (42xxxx) not mapped`，改成这个`42xxxx`。
-
-3. 新建`<HunterPie目录>\Modules\MonsterActionController`文件夹，将以下文件拖入。
+3. 下载插件压缩包(MonsterActionController.zip)：https://github.com/WLLEGit/MHW-MonsterActionController/releases
+4. 新建`<HunterPie目录>\Modules\MonsterActionController`文件夹，将以下文件拖入。
    - MonsterActionController.dll
    - module.json
    - plugin.settings.json
