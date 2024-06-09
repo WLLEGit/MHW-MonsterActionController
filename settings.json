@@ -1,0 +1,8 @@
+{
+    "builtinHotkeys": {
+        "toggleDebug": "Alt+D",
+        "toggleMonster": "Alt+T",
+        "stopControl": "Alt+S",
+        "forceMount": "Alt+E"
+    }
+}

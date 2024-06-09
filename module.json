@@ -3,6 +3,6 @@
     "EntryPoint": "MonsterActionController.cs",
     "Description": "A plugin for controlling the action of monsters",
     "Author": "Lambdale(WLLEGit@github)",
-    "Version": "3.0.0",
+    "Version": "3.1.0",
     "Dependencies": []
 }

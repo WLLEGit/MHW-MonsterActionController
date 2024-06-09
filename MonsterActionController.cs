@@ -14,12 +14,13 @@ using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using HunterPie.Native.Connection.Packets;
 using HunterPie.Native.Connection;
-using System.Net;
 using System.Linq;
 using HunterPie.Core.Settings;
 using System.Timers;
 using System.IO.Pipes;
-using static HunterPie.Plugins.MonsterActionController.ActionList;
+using System.Net.Http;
+using Newtonsoft.Json;
+using HunterPie;
 
 namespace HunterPie.Plugins.MonsterActionController
 {
@@ -53,19 +54,21 @@ namespace HunterPie.Plugins.MonsterActionController
         private readonly DateTime launchTime = DateTime.Now;
 
         public ChatInChinese chatInChinese = new ChatInChinese();
-          
+
         List<string> monsterNameList = new List<string>() { };
-        Dictionary<string, List<ActionList>> cmdValues = new Dictionary<string, List<ActionList>>() {};
-        Dictionary<string, List<string>> cmdExplanations = new Dictionary<string, List<string>>() {};
+        Dictionary<string, List<ActionList>> cmdValues = new Dictionary<string, List<ActionList>>() { };
+        Dictionary<string, List<string>> cmdExplanations = new Dictionary<string, List<string>>() { };
 
         private System.Timers.Timer notifyAliveTimer = new System.Timers.Timer(10000);
+
+        private Settings settings;
 
         #region Load Config: actions.csv
         public static List<String[]> ReadCSV(string filePathName)
         {
             List<String[]> ls = new List<String[]>();
             using (FileStream fileStream = new FileStream(filePathName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                using (StreamReader fileReader = new StreamReader(fileStream, Encoding.Default))
+            using (StreamReader fileReader = new StreamReader(fileStream, Encoding.Default))
             {
                 string strLine = "";
                 while (strLine != null)
@@ -77,8 +80,18 @@ namespace HunterPie.Plugins.MonsterActionController
                     }
                 }
             }
-             
+
             return ls;
+        }
+
+        private void LoadSettings()
+        {
+            Task<Settings> getSettingsTask = this.LoadJson<Settings>("settings.json");
+            getSettingsTask.Wait();
+            settings = getSettingsTask.Result;
+
+            if (!CheckNotNullRecursive(settings))
+                this.Error("settings.json不存在或格式错误");
         }
 
         private void LoadConfig()
@@ -115,6 +128,7 @@ namespace HunterPie.Plugins.MonsterActionController
         {
             chatInChinese.Init();
 
+            LoadSettings();
             LoadConfig();
             Context = context;
             MonsterAddress = 0;
@@ -124,7 +138,9 @@ namespace HunterPie.Plugins.MonsterActionController
             CreateHotkeys();
             HookEvents();
 
-            this.Log("MonsterActionController Initialized");
+            CheckPluginUpdate();
+
+            this.Log("MonsterActionController 初始化完成");
         }
 
         public void Unload()
@@ -149,7 +165,7 @@ namespace HunterPie.Plugins.MonsterActionController
         {
             hotkeyCnt = 0;
 
-            LocalHotkeyRegister("Alt+D", () =>
+            LocalHotkeyRegister(settings.builtinHotkeys.toggleDebug, () =>
             {
                 isDebugging = !isDebugging;
                 this.Log($"is_debugging: {isDebugging}");
@@ -206,7 +222,7 @@ namespace HunterPie.Plugins.MonsterActionController
 
             });
 
-            LocalHotkeyRegister("Alt+T", () =>
+            LocalHotkeyRegister(settings.builtinHotkeys.toggleMonster, () =>
             {
                 isMonsterSelected = true;
                 selectedID = (selectedID + 1) % monsterNameList.Count;
@@ -214,7 +230,7 @@ namespace HunterPie.Plugins.MonsterActionController
                 _ = chatInChinese.Say($"切换到: {monsterNameList[selectedID]}");
             });
 
-            LocalHotkeyRegister("Alt+S", () =>
+            LocalHotkeyRegister(settings.builtinHotkeys.stopControl, () =>
             {
                 if (lockActionThread != null)
                     lockActionThread.Abort();
@@ -225,7 +241,7 @@ namespace HunterPie.Plugins.MonsterActionController
                     notifyAliveTimer.Enabled = true;
             });
 
-            LocalHotkeyRegister("Alt+E", () => { LockMount(); });
+            LocalHotkeyRegister(settings.builtinHotkeys.forceMount, () => { LockMount(); });
 
             foreach (string hotkey in cmdValues.Keys)
             {
@@ -254,19 +270,6 @@ namespace HunterPie.Plugins.MonsterActionController
         }
         #endregion
 
-        private void StopThread(bool stopAll = false)
-        {
-            if (lockActionThread != null)
-                lockActionThread.Abort();
-            if (stopAll)
-            {
-                if (lockHealthThread != null)
-                    lockHealthThread.Abort();
-                if (lockMountThread != null)
-                    lockMountThread.Abort();
-            }
-
-        }
 
         public void HotkeyCallback(string hotkey)
         {
@@ -404,6 +407,72 @@ namespace HunterPie.Plugins.MonsterActionController
             Monster tar = (Monster)source;
             targetMonster = tar;
         }
+
+
+        private async void CheckPluginUpdate()
+        {
+            string releaseUrl = "https://github.com/WLLEGit/MHW-MonsterActionController/releases";
+            string apiUrl = "https://api.github.com/repos/WLLEGit/MHW-MonsterActionController/releases/latest";
+            try
+            {
+                using (HttpClient httpClient = new HttpClient())
+                {
+                    httpClient.DefaultRequestHeaders.Add("Accept", "application/vnd.github+json");
+                    httpClient.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+                    httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0");
+
+
+                    HttpResponseMessage response = await httpClient.GetAsync(apiUrl);
+                    response.EnsureSuccessStatusCode();
+                    string resp = await response.Content.ReadAsStringAsync();
+                    GithubLatestReleaseApiResp json = JsonConvert.DeserializeObject<GithubLatestReleaseApiResp>(resp);
+                    string tag = json.tag_name;
+                    PluginInformation pluginInfo = await this.LoadJson<PluginInformation>("module.json");
+                    string curTag = $"v{pluginInfo?.Version}";
+                    if (tag != curTag)
+                    {
+                        this.Log($"插件非最新版，当前{curTag}，最新{tag}");
+                        this.Log(releaseUrl);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                this.Log("无法获取Github Release信息，请手动检查插件是否为最新版。");
+                this.Log(releaseUrl);
+            }
+        }
+
+        private bool CheckNotNullRecursive<T>(T obj)
+        {
+            foreach (PropertyInfo pi in obj.GetType().GetProperties())
+            {
+                object property = pi.GetValue(obj);
+                if (property == null)
+                    return false;
+                if (!CheckNotNullRecursive(property))
+                    return false;
+            }
+            return true;
+        }
+
+        public class Settings
+        {
+            public class BuiltinHotkeys
+            {
+                public string toggleDebug;
+                public string toggleMonster;
+                public string stopControl;
+                public string forceMount;
+            }
+
+            public BuiltinHotkeys builtinHotkeys;
+        }
+
+        public class GithubLatestReleaseApiResp
+        {
+            public string tag_name;
+        }
     }
 
     public class ChatInChinese
@@ -466,7 +535,7 @@ namespace HunterPie.Plugins.MonsterActionController
                         List<string> strings = actionCandidate.Split('@').ToList();
                         idCandidates.Add(int.Parse(strings[0]));
                         if (duration == 0)
-                            duration= float.Parse(strings[1]);
+                            duration = float.Parse(strings[1]);
                     }
                     else
                     {
@@ -503,4 +572,5 @@ namespace HunterPie.Plugins.MonsterActionController
             }
         }
     }
+
 }
