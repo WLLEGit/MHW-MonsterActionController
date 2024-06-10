@@ -20,7 +20,6 @@ using System.Timers;
 using System.IO.Pipes;
 using System.Net.Http;
 using Newtonsoft.Json;
-using HunterPie;
 
 namespace HunterPie.Plugins.MonsterActionController
 {
@@ -321,7 +320,7 @@ namespace HunterPie.Plugins.MonsterActionController
                         while (DateTime.Now < lockEnd)
                         {
                             curAct = Kernel.Read<int>(actionPointer);
-                            if (!expectAct.idCandidates.Contains(curAct) && (nextAct == null || !expectAct.idCandidates.Contains(curAct)))
+                            if (!expectAct.idCandidates.Contains(curAct) && (nextAct == null || !nextAct.idCandidates.Contains(curAct)))
                             {
                                 Kernel.Write<int>(actionPointer, expectAct.idCandidates[0]);
                                 lockEnd = DateTime.Now.AddSeconds(expectAct.duration);
@@ -420,7 +419,6 @@ namespace HunterPie.Plugins.MonsterActionController
                     httpClient.DefaultRequestHeaders.Add("Accept", "application/vnd.github+json");
                     httpClient.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
                     httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0");
-
 
                     HttpResponseMessage response = await httpClient.GetAsync(apiUrl);
                     response.EnsureSuccessStatusCode();
